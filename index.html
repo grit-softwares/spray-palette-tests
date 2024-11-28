@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Color Extractor and Matching</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        h1 {
+            text-align: center;
+        }
+        #container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #image-preview {
+            margin-top: 20px;
+            text-align: center;
+        }
+        #color-scheme {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+            width: 100%;
+            max-width: 1200px;
+        }
+        .color-box {
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .color-display {
+            width: 100%;
+            height: 50px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+        .color-title {
+            font-weight: bold;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+<h1>Upload an Image and Find Matching Colors</h1>
+<div id="container">
+    <form id="upload-form">
+        <input type="file" id="image" name="image" accept="image/*" required>
+    </form>
+
+    <div id="image-preview"></div>
+    <div id="color-scheme"></div>
+</div>
+
+<!-- Import ColorThief -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.3.0/color-thief.umd.js"></script>
+
+<script>
+	const apiUrl = "https://bnpkjkiolqsclibjjrbp.supabase.co/functions/v1/tinta-buscar-parecida/";
+	const token = "eyJhbGciOiJIUzI1NiIsImtpZCI6ImFTU3l3V0twSGZaY0E4V1giLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL2JucGtqa2lvbHFzY2xpYmpqcmJwLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiIyYjgxODgxOC0xMDI5LTQ4NTUtYWM2Ny1iZDM0NDYxNGM2ODMiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzMyOTA5NDcwLCJpYXQiOjE3MzI4MjMwNzAsImVtYWlsIjoiYWRtaW5AdGVzdGUuY29tIiwicGhvbmUiOiIiLCJhcHBfbWV0YWRhdGEiOnsicHJvdmlkZXIiOiJlbWFpbCIsInByb3ZpZGVycyI6WyJlbWFpbCJdfSwidXNlcl9tZXRhZGF0YSI6e30sInJvbGUiOiJhdXRoZW50aWNhdGVkIiwiYWFsIjoiYWFsMSIsImFtciI6W3sibWV0aG9kIjoicGFzc3dvcmQiLCJ0aW1lc3RhbXAiOjE3MzI4MjMwNzB9XSwic2Vzc2lvbl9pZCI6Ijg0MmJmODllLTkyMDQtNDI5NS05NzMzLWRkOTFhNGY1ZWFlYSIsImlzX2Fub255bW91cyI6ZmFsc2V9.86B0tg1sZ9u3u-raZ62Mbx-7b35gUL7hwvg4pMDIkV0";
+
+	document.getElementById('image').addEventListener('change', async function() {
+		const file = this.files[0];
+		if (file) {
+			const img = new Image();
+			img.src = URL.createObjectURL(file);
+			img.onload = async function() {
+				const colorThief = new ColorThief();
+				const palette = colorThief.getPalette(img, 10); // Extrai 10 cores
+
+				// Exibe a imagem
+				document.getElementById('image-preview').innerHTML = `
+                    <h2>Uploaded Image</h2>
+                    <img src="${img.src}" alt="Uploaded Image" style="max-width: 100%; max-height: 300px; border: 1px solid #ddd; border-radius: 8px;">
+                `;
+
+				// Configuração inicial
+				let colorSchemeDiv = document.getElementById('color-scheme');
+				colorSchemeDiv.innerHTML = '';
+
+				// Cria um canvas para analisar a imagem
+				const canvas = document.createElement('canvas');
+				const ctx = canvas.getContext('2d');
+				canvas.width = img.width;
+				canvas.height = img.height;
+				ctx.drawImage(img, 0, 0);
+
+				// Obtém os dados da imagem
+				const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+				const pixels = imageData.data;
+				const totalPixels = canvas.width * canvas.height;
+
+				// Função para encontrar a cor mais próxima na paleta
+				function findClosestPaletteColor(r, g, b, palette) {
+					let closestIndex = 0;
+					let closestDistance = Number.MAX_VALUE;
+
+					palette.forEach((color, index) => {
+						const distance = Math.sqrt(
+							Math.pow(color[0] - r, 2) +
+							Math.pow(color[1] - g, 2) +
+							Math.pow(color[2] - b, 2)
+						);
+						if (distance < closestDistance) {
+							closestDistance = distance;
+							closestIndex = index;
+						}
+					});
+
+					return closestIndex;
+				}
+
+				// Contador de pixels para cada cor da paleta
+				const colorCounts = new Array(palette.length).fill(0);
+
+				// Conta a frequência de cada cor na imagem
+				for (let i = 0; i < pixels.length; i += 4) {
+					const r = pixels[i];
+					const g = pixels[i + 1];
+					const b = pixels[i + 2];
+					const closestColorIndex = findClosestPaletteColor(r, g, b, palette);
+					colorCounts[closestColorIndex]++;
+				}
+
+				// Calcula as porcentagens e exibe os resultados
+				for (let i = 0; i < palette.length; i++) {
+					const hex = rgbToHex(palette[i][0], palette[i][1], palette[i][2]);
+					const percentage = ((colorCounts[i] / totalPixels) * 100).toFixed(2); // Porcentagem de uso
+					const matchingColor = await buscarTinta(hex.replace("#", "")); // Remove o # antes de enviar
+					exibirResultado(hex, matchingColor, colorSchemeDiv, percentage);
+				}
+			};
+		}
+	});
+
+	function rgbToHex(r, g, b) {
+		return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+	}
+
+	async function buscarTinta(hex) {
+		try {
+			const response = await fetch(`${apiUrl}${hex}`, {
+				method: "GET",
+				headers: {
+					"Authorization": `Bearer ${token}`
+				}
+			});
+			if (response.ok) {
+				return await response.json();
+			} else {
+				return null;
+			}
+		} catch (error) {
+			console.error("Erro ao buscar tinta:", error);
+			return null;
+		}
+	}
+
+	function exibirResultado(originalHex, data, container, percentage) {
+		const resultDiv = document.createElement('div');
+		resultDiv.className = "color-box";
+
+		if (data) {
+			resultDiv.innerHTML = `
+                <div class="color-display" style="background-color: ${originalHex};"></div>
+                <strong>Original:</strong> ${originalHex.toUpperCase()}<br>
+                <strong>Porcentagem de uso:</strong> ${percentage}%<br>
+                <div class="color-display" style="background-color: ${data.hexadecimal};"></div>
+                <strong>Mais Próxima:</strong> ${data.hexadecimal.toUpperCase()}<br>
+                <strong>Nome:</strong> ${data.nome}<br>
+                ${data.codigo ? `<strong>Código:</strong> ${data.codigo}<br>` : ""}
+                ${data.tipo ? `<strong>Tipo:</strong> ${data.tipo}<br>` : ""}
+                ${data.categoria ? `<strong>Categoria:</strong> ${data.categoria}<br>` : ""}
+                <strong>Marca:</strong> ${data.nome_marca}<br>
+                <strong>Match:</strong> ${data.match_percentage}%
+            `;
+		} else {
+			resultDiv.innerHTML = `
+                <div class="color-display" style="background-color: ${originalHex};"></div>
+                <strong>Original:</strong> ${originalHex.toUpperCase()}<br>
+                <strong>Erro ao buscar tinta correspondente.</strong>
+            `;
+		}
+
+		container.appendChild(resultDiv);
+	}
+</script>
+</body>
+</html>
